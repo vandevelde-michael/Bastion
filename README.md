@@ -1,46 +1,13 @@
-#PROJET BASTION
+# 🛡️ Bastion Guacamole – Guide Simplifié
 
-## Guide d'installation du Bastion Apache Guacamole
+## ⚙️ 1. Prérequis
 
-### 1. Introduction
+* **VM Bastion** (Debian 12 CLI) avec sudo
+* **Nom de domaine/IP fixe** pointant sur la VM
+* **Ports ouverts** : 80, 443, 4822 (guacd), 8080 (Tomcat)
+* Internet pour télécharger les paquets
 
-Ce guide détaille **étape par étape** l'installation d'un bastion sécurisé sur Debian 12, basé sur Apache Guacamole. Chaque étape inclut la raison d'être (le « pourquoi ») pour comprendre l’intérêt de chaque composant.
-
-### 2. Architecture et composants
-
-* **VM Bastion** :
-
-  * **OS : Debian 12 (CLI)** – version stable, légère, et supportée pour serveurs.
-  * **Logiciels** :
-
-    * **guacd** : démon qui convertit les protocoles distants (RDP, VNC, SSH) en flux WebSocket pour le navigateur.
-    * **Tomcat9** : conteneur Java pour héberger l’application Web Guacamole.
-    * **Base SQL** (MariaDB) : stocke les utilisateurs, connexions et paramètres de manière persistante et sécurisée.
-    * **Nginx** : sert de reverse‑proxy HTTPS, offrant chiffrement et protection contre certaines attaques.
-* **VM Linux GUI** : Debian 12 + Xfce – cible VNC pour tester l’accès GUI.
-* **VM Linux CLI** : Debian 12 – cible SSH pour accès ligne de commande.
-* **VM Windows** : Windows 10 – cible RDP pour accès poste de travail.
-* **Réseau** :
-
-  * `eth0` (frontale) : expose les ports web (80/443) au monde extérieur.
-  * `eth1` (privée) : communication interne sécurisée vers les VM cibles.
-
-### 3. Prérequis
-
-Avant de démarrer, assurez-vous de :
-
-1. Avoir un **utilisateur sudo** ou root sur la VM Bastion pour installer des paquets.
-2. Avoir **Internet** pour télécharger les logiciels.
-3. **Ouvrir les ports** essentiels :
-
-   * **4822** (guacd) : flux interne entre guacd et l’app Web.
-   * **8080** (Tomcat) : Tomcat écoute là, mais sera protégé par Nginx.
-   * **80/443** : HTTP/HTTPS pour l’accès utilisateur final.
-4. Disposer d’un **nom de domaine** pointant vers l’IP fixe du bastion pour un accès SSL correct.
-
-### 4. Installation de guacd (le moteur de protocole)
-
-**Pourquoi ?** guacd traduit les flux RDP/VNC/SSH en WebSockets, sans lui le navigateur ne pourrait pas se connecter.
+## 📥 2. Installer guacd
 
 ```bash
 sudo apt update
@@ -48,170 +15,98 @@ sudo apt install -y guacd
 sudo systemctl enable --now guacd
 ```
 
-Vérifier que le démon tourne :
+*Pourquoi ?* guacd fait le pont entre RDP/VNC/SSH et le navigateur.
 
-```bash
-systemctl status guacd
-```
+## 🚀 3. Tomcat + Guacamole Web App
 
-### 5. Installation de Tomcat9 et déploiement de l’application
-
-**Pourquoi Tomcat ?** Guacamole Web App est une application Java (WAR) nécessitant un conteneur Java.
-
-1. Installer Tomcat9 et l’interface d’administration :
+1. **Tomcat9** :
 
    ```bash
-   sudo apt install -y tomcat9 tomcat9-admin
+   sudo apt install -y tomcat9
    ```
-2. Télécharger la version stable de Guacamole Web App (WAR) :
+2. **Guacamole WAR** :
 
    ```bash
    wget https://apache.org/dist/guacamole/1.5.0/binary/guacamole-1.5.0.war -O guacamole.war
-   ```
-3. Placer le WAR dans le répertoire de déploiement Tomcat :
-
-   ```bash
    sudo mv guacamole.war /var/lib/tomcat9/webapps/
-   ```
-4. Créer le dossier de configuration :
-
-   ```bash
-   sudo mkdir /etc/guacamole
-   sudo chown tomcat:tomcat /etc/guacamole
-   ```
-5. Lier cette config au home Tomcat, pour qu’il la charge :
-
-   ```bash
+   sudo mkdir /etc/guacamole && sudo chown tomcat: /etc/guacamole
    sudo ln -s /etc/guacamole /usr/share/tomcat9/.guacamole
    sudo systemctl restart tomcat9
    ```
 
-### 6. Base de données MariaDB – pourquoi une base SQL ?
+*Pourquoi ?* Tomcat héberge l’application Java Guacamole.
 
-Guacamole stocke persistent les utilisateurs, mots de passe, et connexions. Une base relationnelle garantit intégrité et possibilité de sauvegarde.
+## 🗄️ 4. Base de données MariaDB
 
-1. Installer MariaDB :
+```bash
+sudo apt install -y mariadb-server
+sudo mysql_secure_installation
+```
 
-   ```bash
-   sudo apt install -y mariadb-server
-   ```
-2. Sécuriser l’installation (supprime comptes anonymes, désactive remote root, etc.) :
+```sql
+CREATE DATABASE guacamole_db;
+CREATE USER 'guacuser'@'localhost' IDENTIFIED BY 'ChangeMe!';
+GRANT ALL ON guacamole_db.* TO 'guacuser'@'localhost';
+```
 
-   ```bash
-   sudo mysql_secure_installation
-   ```
-3. Créer la base et l’utilisateur dédié :
+```bash
+wget https://apache.org/dist/guacamole/1.5.0/binary/guacamole-auth-jdbc-1.5.0.tar.gz
+tar xzf guacamole-auth-jdbc-1.5.0.tar.gz
+cat guacamole-auth-jdbc-1.5.0/mysql/schema/*.sql | mysql -u root -p guacamole_db
+```
 
-   ```sql
-   CREATE DATABASE guacamole_db;
-   CREATE USER 'guacuser'@'localhost' IDENTIFIED BY 'ChangeMe!';
-   GRANT ALL PRIVILEGES ON guacamole_db.* TO 'guacuser'@'localhost';
-   FLUSH PRIVILEGES;
-   ```
-4. Charger le schéma JDBC fourni par Guacamole :
+*Pourquoi ?* Stockage persistant des utilisateurs et configs.
 
-   ```bash
-   wget https://apache.org/dist/guacamole/1.5.0/binary/guacamole-auth-jdbc-1.5.0.tar.gz
-   tar -xzf guacamole-auth-jdbc-1.5.0.tar.gz
-   cat guacamole-auth-jdbc-1.5.0/mysql/schema/*.sql | mysql -u root -p guacamole_db
-   ```
+## 🔧 5. Configurer Guacamole
 
-### 7. Configuration de l’application Guacamole
-
-**Pourquoi ce fichier ?** `guacamole.properties` lie l’appli Java à guacd et à la base de données.
 Créer `/etc/guacamole/guacamole.properties` :
 
 ```
 guacd-hostname: localhost
 guacd-port: 4822
 mysql-hostname: localhost
-mysql-port: 3306
 mysql-database: guacamole_db
 mysql-username: guacuser
 mysql-password: ChangeMe!
 ```
 
-Appliquer :
-
 ```bash
 sudo systemctl restart tomcat9 guacd
 ```
 
-### 8. Reverse‑proxy HTTPS avec Nginx (sécurisation de l’accès)
+## 🔒 6. HTTPS avec Nginx
 
-**Pourquoi Nginx ?** Pour fournir TLS (HTTPS) et protéger Tomcat, démultiplexer l’accès HTTP/HTTPS.
-
-1. Installer Nginx :
+1. **Installer** :
 
    ```bash
    sudo apt install -y nginx
    ```
-2. Créer le fichier `/etc/nginx/sites-available/guacamole` :
+2. **Config** `/etc/nginx/sites-available/guacamole` :
 
-```
-server {
-  listen 80;
-  server_name bastion.example.com;
-  # Redirection HTTP -> HTTPS
-  return 301 https://$host$request_uri;
-}
-server {
-  listen 443 ssl http2;
-  server_name bastion.example.com;
+   * rediriger 80→443
+   * proxy\_pass → `http://127.0.0.1:8080/guacamole/`
+3. **Activer** :
 
-  # Chemins vers vos certificats TLS
-  ssl_certificate /etc/ssl/certs/fullchain.pem;
-  ssl_certificate_key /etc/ssl/private/privkey.pem;
+   ```bash
+   sudo ln -s /etc/nginx/sites-available/guacamole /etc/nginx/sites-enabled/
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
 
-  location / {
-    # Proxy vers Tomcat
-    proxy_pass http://127.0.0.1:8080/guacamole/;
-    proxy_buffering off;
-    proxy_http_version 1.1;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $http_connection;
-  }
-}
-```
+*Pourquoi ?* TLS pour sécuriser l’accès.
 
-3. Activer et tester :
+## 💻 7. Connexions & utilisateurs
 
-```bash
-sudo ln -s /etc/nginx/sites-available/guacamole /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-```
+* Ouvrir `https://bastion.example.com`
+* Login : `guacadmin` / `guacadmin`, puis changer le mot de passe
+* **Settings > Connections** : ajouter SSH, VNC, RDP
+* **Users & Groups** : créer groupes (Admin, Linux, Windows)
 
-### 9. Configuration des connexions et des utilisateurs (interface Web)
+## ✅ 8. Tests & Fin
 
-**Pourquoi ?** Définir qui peut accéder à quoi, et comment.
-
-1. Visiter `https://bastion.example.com` et se connecter (par défaut `guacadmin`/`guacadmin`).
-2. Changer le mot de passe admin.
-3. Dans **Settings > Connections**, ajouter :
-
-   * **SSH** vers VM CLI (IP privée)
-   * **VNC** vers Linux GUI
-   * **RDP** vers Windows 10
-4. Dans **Users & Groups**, créer des groupes (Admin, Linux, Windows) et assigner les connexions.
-
-### 10. Tests et validation
-
-* **Pourquoi ?** Pour vérifier la fiabilité et le bon fonctionnement.
-* Tester chaque protocole depuis le navigateur.
-* Vérifier le transfert de fichiers et le redimensionnement d’écran.
-* Inspecter les logs pour détecter erreurs :
-
-  * `/var/log/guacd/guacd.log`
-  * `/var/log/tomcat9/catalina.out`
-  * `/var/log/nginx/error.log`
-
-### 11. Mesures de sécurité supplémentaires
-
-* **MFA (TOTP)** : ajoute une couche supplémentaire d’authentification.
-* **Firewall** : restreindre les accès à `eth1` (UFW ou iptables).
-* **Mises à jour** : planifier `apt upgrade` régulier pour corriger les vulnérabilités.
+* Tester chaque protocole dans le navigateur
+* Vérifier logs (`guacd`, `tomcat9`, `nginx`)
+* (Optionnel) activer **MFA**, **Firewall**, **MAJ régulières**
 
 ---
 
-*Fin du guide d'installation. Maintenant, vous comprenez à la fois le comment **et** le pourquoi de chaque composant.*
+*Guide simplifié avec icônes pour un aperçu rapide.*
