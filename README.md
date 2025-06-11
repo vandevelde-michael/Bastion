@@ -146,3 +146,7 @@ sudo systemctl restart tomcat9 guacd
 ---
 
 *Guide simplifié avec icônes pour un aperçu rapide.*
+
+---
+
+**Projet réalisé par :** Quentin, Etienne, Morane et Michael
