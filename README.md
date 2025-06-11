@@ -36,28 +36,64 @@ sudo systemctl enable --now guacd
 
 *Pourquoi ?* Tomcat héberge l’application Java Guacamole.
 
-## 🗄️ 4. Base de données MariaDB
+## 📂 4. Configuration via guacamole.xml
 
-```bash
-sudo apt install -y mariadb-server
-sudo mysql_secure_installation
-```
+Guacamole peut fonctionner sans base SQL, en utilisant un fichier XML pour définir utilisateurs et connexions.
 
-```sql
-CREATE DATABASE guacamole_db;
-CREATE USER 'guacuser'@'localhost' IDENTIFIED BY 'ChangeMe!';
-GRANT ALL ON guacamole_db.* TO 'guacuser'@'localhost';
-```
+1. Créer le dossier de config si nécessaire :
 
-```bash
-wget https://apache.org/dist/guacamole/1.5.0/binary/guacamole-auth-jdbc-1.5.0.tar.gz
-tar xzf guacamole-auth-jdbc-1.5.0.tar.gz
-cat guacamole-auth-jdbc-1.5.0/mysql/schema/*.sql | mysql -u root -p guacamole_db
-```
+   ```bash
+   sudo mkdir -p /etc/guacamole
+   ```
+2. Éditer `/etc/guacamole/guacamole.xml` :
 
-*Pourquoi ?* Stockage persistant des utilisateurs et configs.
+   ```xml
+   <user-mapping>
+     <!-- Admin -->
+     <authorize username="admin" password="adminpass">
+       <connection name="Debian-CLI (SSH)">
+         <protocol>ssh</protocol>
+         <param name="hostname">192.168.1.10</param>
+         <param name="port">22</param>
+         <param name="username">usercli</param>
+       </connection>
+       <connection name="Linux-GUI (VNC)">
+         <protocol>vnc</protocol>
+         <param name="hostname">192.168.1.11</param>
+         <param name="port">5901</param>
+       </connection>
+       <connection name="Windows-10 (RDP)">
+         <protocol>rdp</protocol>
+         <param name="hostname">192.168.1.20</param>
+         <param name="port">3389</param>
+       </connection>
+     </authorize>
+     <!-- Autres utilisateurs -->
+   </user-mapping>
+   ```
+
+*Pourquoi ?* Le XML est simple, sans dépendance externe, parfait pour de petits déploiements.
 
 ## 🔧 5. Configurer Guacamole
+
+Modifier `/etc/guacamole/guacamole.properties` pour passer en mode XML :
+
+```
+guacd-hostname: localhost
+guacd-port: 4822
+guacamole-home: /etc/guacamole
+user-mapping: /etc/guacamole/guacamole.xml
+```
+
+Redémarrer les services :
+
+```bash
+sudo systemctl restart guacd tomcat9
+```
+
+*Pourquoi ?* Ces paramètres indiquent à Guacamole d’utiliser le fichier XML plutôt que la base de données.
+
+## 🔒 6. HTTPS avec Nginx Configurer Guacamole
 
 Créer `/etc/guacamole/guacamole.properties` :
 
